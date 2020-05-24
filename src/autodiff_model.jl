@@ -2,7 +2,19 @@ using ForwardDiff
 
 export ADNLPModel
 
-@doc raw"""ADNLPModel is an AbstractNLPModel using ForwardDiff to compute the
+mutable struct ADNLPModel <: AbstractNLPModel
+  meta :: NLPModelMeta
+
+  counters :: Counters
+
+  # Functions
+  f
+  c
+end
+
+show_header(io :: IO, nlp :: ADNLPModel) = println(io, "ADNLPModel - Model with automatic differentiation")
+
+"""ADNLPModel is an AbstractNLPModel using ForwardDiff to compute the
 derivatives.
 In this interface, the objective function ``f`` and an initial estimate are
 required. If there are constraints, the function
@@ -39,31 +51,14 @@ and ``c_L`` and ``c_U`` should be passed, otherwise the problem is ill-formed.
 For equality constraints, the corresponding index of ``c_L`` and ``c_U`` should be the
 same.
 """
-mutable struct ADNLPModel <: AbstractNLPModel
-  meta :: NLPModelMeta
+function ADNLPModel(f, x0::AbstractVector{T}; nvar :: Integer = length(x0), ncon :: Integer = 0,
+                    lvar::AbstractVector = fill(T(-Inf), nvar), uvar::AbstractVector = fill(T(Inf), nvar),
+                    lcon::AbstractVector = fill(T(-Inf), ncon), ucon::AbstractVector = fill(T(Inf), ncon),
+                    c = (args...)->T[], y0::AbstractVector = zeros(T, ncon),
+                    name::String = "Generic", lin::AbstractVector{<: Integer}=Int[]) where T
 
-  counters :: Counters
-
-  # Functions
-  f
-  c
-end
-
-show_header(io :: IO, nlp :: ADNLPModel) = println(io, "ADNLPModel - Model with automatic differentiation")
-
-function ADNLPModel(f, x0::AbstractVector;
-                    lvar::AbstractVector = fill(-Inf, length(x0)), uvar::AbstractVector = fill(Inf, length(x0)),
-                    lcon::AbstractVector = eltype(x0)[], ucon::AbstractVector = eltype(x0)[],
-                    c = x -> eltype(x0)[], y0::AbstractVector = eltype(x0)[],
-                    name::String = "Generic", lin::AbstractVector{<: Integer}=Int[])
-
-  T = eltype(x0)
-  nvar = length(x0)
-  ncon = maximum([length(lcon); length(ucon); length(y0)])
-  length(lcon) == 0 && (lcon = fill(-T(Inf), ncon))
-  length(ucon) == 0 && (ucon = fill(T(Inf), ncon))
-  length(y0) == 0 && (y0 = zeros(T, ncon))
-  @lencheck ncon lcon ucon y0
+  @lencheck nvar x0 lvar uvar
+  @lencheck ncon y0 lcon ucon
 
   nnzh = nvar * (nvar + 1) / 2
   nnzj = nvar * ncon
@@ -75,6 +70,39 @@ function ADNLPModel(f, x0::AbstractVector;
     islp=false, name=name)
 
   return ADNLPModel(meta, Counters(), f, c)
+end
+
+"""
+    nlp = ADNLPModel(f, x0, lvar, uvar; kwargs...)
+"""
+function ADNLPModel(f, x0::AbstractVector, lvar::AbstractVector, uvar::AbstractVector; kwargs...)
+  nvar = length(x0)
+  @lencheck nvar x0 lvar uvar
+
+  return ADNLPModel(f, x0, nvar=nvar, lvar=lvar, uvar=uvar; kwargs...)
+end
+
+"""
+    nlp = ADNLPModel(f, x0, c, lcon, ucon; kwargs...)
+"""
+function ADNLPModel(f, x0::AbstractVector, c, lcon::AbstractVector, ucon::AbstractVector; kwargs...)
+  ncon = length(lcon)
+  @lencheck ncon ucon
+
+  return ADNLPModel(f, x0, nvar=length(x0), ncon=ncon, c=c, lcon=lcon, ucon=ucon; kwargs...)
+end
+
+"""
+    nlp = ADNLPModel(f, x0, lvar, uvar, c, lcon, ucon; kwargs...)
+"""
+function ADNLPModel(f, x0::AbstractVector, lvar::AbstractVector, uvar::AbstractVector,
+                    c, lcon::AbstractVector, ucon::AbstractVector; kwargs...)
+  nvar = length(x0)
+  @lencheck nvar x0 lvar uvar
+  ncon = length(lcon)
+  @lencheck ncon ucon
+
+  return ADNLPModel(f, x0, nvar=nvar, lvar=lvar, uvar=uvar, ncon=ncon, c=c, lcon=lcon, ucon=ucon; kwargs...)
 end
 
 function obj(nlp :: ADNLPModel, x :: AbstractVector)
